@@ -1,0 +1,48 @@
+---
+- hosts: all
+  become: true
+  tasks:
+    - name: Install Docker if missing
+      apt:
+        name: docker.io
+        update_cache: yes
+        state: present
+      when: not docker_info.running.state == "running"
+
+    - name: Generate list of host ports
+      set_fact:
+        host_ports: "{{ range(50) | map(x => 8000 + x) }}"
+
+    - name: Deploy Nginx containers
+      loop: "{{ host_ports }}"
+        loop_control:
+          index_var: container_number
+        name: "Nginx container {{ container_number }}"
+        docker_container:
+          name: "nginx{{ container_number }}"
+          image: nginx:latest
+          ports:
+            - "{{ item }}:80"
+          restart: unless-stopped
+
+    - name: Check Nginx services
+      loop: "{{ host_ports }}"
+        loop_control:
+          index_var: container_number
+        name: "Check Nginx service {{ container_number }}"
+        service:
+          name: "docker-container-nginx{{ container_number }}"
+          state: started
+        when: container_info.state == "running"
+
+- hosts: localhost
+  tasks:
+    - name: Verify Nginx containers are accessible
+      loop: "{{ host_ports }}"
+        loop_control:
+          index_var: container_number
+        name: "Verify Nginx container {{ container_number }}"
+        uri:
+          url: "http://localhost:{{ item }}"
+          status_code: 200
+        when: container_info.state == "running"
